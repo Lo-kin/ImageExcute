@@ -11,34 +11,36 @@ namespace ImageExcute
         static void Main(string[] args)
         {
             Program program = new Program();
-            Console.Write("Image Path>");
-            program.Test(Console.ReadLine());
+            program.UI();
         }
 
-        public bool Test(string Path)
+        public static bool Exit()
         {
-            Mat mat = Cv2.ImRead(Path , ImreadModes.Grayscale);
-            //Cv2.Resize(mat, mat, new OpenCvSharp.Size(), 0.2, 0.2, InterpolationFlags.Linear);
+            return true;
+        }
+
+        public bool UI()
+        {
+            string FilePath = "";
+            Mat mat = null;
             Mat[] Frames = [];
-            Mat OTSU = mat.Threshold(0, 255, ThresholdTypes.Otsu);
-            double rate = 0.2d;
-            if (mat.Empty() == true)
-            {
-                return false;
-            }
+
             ProcessData pd0 = new ProcessData(0);
-            ProcessBar processBar0 = new ProcessBar(() => { return MakeShakeFrames(mat, 12 ,out Frames , pd0); } , pd0);
+            ProcessBar processBar0 = new ProcessBar(() => { return MakeShakeFrames(mat, 12, out Frames, pd0); }, pd0);
+            ProcessBar processBar1 = new ProcessBar(() => { return TransToGif(mat.Cols, mat.Rows, Frames, 50, pd0); }, pd0);
+            ProcessBar processBar2 = new ProcessBar(() => { return TransToChar(new Mat(FilePath , ImreadModes.Grayscale).Threshold(0, 255, ThresholdTypes.Otsu), 1, pd0); }, pd0);
             processBar0.Name = "Make Frames";
-            processBar0.Run();
-            ProcessData pd1 = new ProcessData(0);
-            ProcessBar processBar1 = new ProcessBar(() => { return TransToGif(mat.Cols, mat.Rows, Frames, 50, pd1); }, pd1);
-            ProcessData pd2 = new ProcessData(0);
-            ProcessBar processBar2 = new ProcessBar(() => { return TransToChar(OTSU ,1 ,  pd2); }, pd2);
             processBar1.Name = "Trans Mats To Gif";
             processBar2.Name = "Trans Mat To Char Image";
-            processBar1.Run();
-            processBar2.Run();
-            
+            Selection selection = new Selection();
+            selection.AddSelection("Shake Frames" , () => {return processBar0.Run();});
+            selection.AddSelection("Transform Image To Chars", () => { return processBar2.Run();});
+            selection.AddSelection("Get Shake Frames GIF", () => { return processBar1.Run(); });
+            selection.AddSelection("Exit", () => { selection.ShowInfo(0, "Press ESC To Escape");return true; });
+            selection.AddSelection("Choose File Path", () => {selection.ShowInfo(0,"Image Path>") ; FilePath = Console.ReadLine().Replace("\"", "");mat = Cv2.ImRead(FilePath); return true; });
+
+            selection.Run();
+
             return true;
         }
 
@@ -53,11 +55,7 @@ namespace ImageExcute
             {
                 return false;
             }
-            if (mat.Empty() == true)
-            {
-                return false;
-            }
-            if (Count < 0  || Count >= 256)
+            if (mat.Empty() == true || Count < 0 || Count >= 256)
             {
                 return false;
             }
@@ -66,7 +64,7 @@ namespace ImageExcute
             for (int i = 0; i < Count; i++)
             {
                 OutFrames[i] = new Mat(mat.Rows, mat.Cols, mat.Type());
-                frameoffset[i] = (int)Random.Shared.NextInt64(-500 * (long)Math.Sin(i * 10), 500 * (long)Math.Sin(i * 10));
+                frameoffset[i] = (int)Random.Shared.NextInt64((long)(-mat.Cols * 0.2d), (long)(mat.Cols * 0.2d));
             }
             foreach (var frame in OutFrames)
             {
@@ -85,12 +83,11 @@ namespace ImageExcute
                         }
                     }
                 }
-                
             }
             Frames = OutFrames;
             if (PD != null)
             {
-                PD.Over = true;
+                PD.TaskOver();
             }
             return true;
         }
@@ -133,7 +130,10 @@ namespace ImageExcute
             }
             gif.Frames.RemoveFrame(0);
             gif.SaveAsGif("output.gif");
-            PD.Over = true;
+            if (PD != null)
+            {
+                PD.TaskOver();
+            }
             return true;
         }
 
@@ -150,9 +150,9 @@ namespace ImageExcute
                 for (int x = 0; x <= mat.Cols; x += 2)
                 {
                     byte[,] bytes = new byte[2, 4];
-                    for (int _cely = y; _cely < y + 4; _cely++)
+                    for (int _cely = y; _cely < Math.Min(y + 4 , mat.Rows); _cely++)
                     {
-                        for (int _celx = x; _celx < x + 2; _celx++)
+                        for (int _celx = x; _celx < Math.Min(x + 2 , mat.Cols); _celx++)
                         {
                             Vec3b p = mat.Get<Vec3b>(_cely, _celx);
                             byte greyvalue = (byte)((p.Item0 + p.Item2 + p.Item1) / 3);
@@ -163,7 +163,7 @@ namespace ImageExcute
                             }
                         }
                     }
-                    ImageResult += Get2x4Char(bytes, threshold);
+                    ImageResult += Get2x4Char(bytes, 140);
                 }
                 ImageResult += "\n";
             }
@@ -171,7 +171,12 @@ namespace ImageExcute
             using StreamWriter sw = new StreamWriter("test.txt" , false);
             sw.Write(ImageResult);
             sw.Flush();
-            PD.Over = true;
+            ImageResult = string.Empty;
+            if (PD != null)
+            {
+                PD.TaskOver();
+            }
+            
             return true;
         }
     }
@@ -198,7 +203,7 @@ namespace ImageExcute
             {
                 return false;
             }
-            CurTop = Console.CursorTop;
+            CurTop = 10;
             Thread t = new Thread(() => 
             {  
                 while (true)
@@ -226,6 +231,7 @@ namespace ImageExcute
                     }
                     Thread.Sleep(500);
                 }
+                Console.WriteLine("Task Done!");
             });
             t.Start();
             Task.Invoke();
@@ -242,6 +248,13 @@ namespace ImageExcute
         public ProcessData(double total) 
         {
             TotalTask = total;
+        }
+
+        public bool TaskOver()
+        {
+            Over = true;
+            TotalTask = 0; Current = 0;
+            return true;
         }
     }
 
@@ -301,5 +314,90 @@ namespace ImageExcute
             num = Math.Clamp(num, 0, 255);
             return char.ConvertFromUtf32(num + 10240);
         }
+    }
+
+    public class Selection
+    {
+        public Dictionary<string, Func<bool >> Functions = [];
+        public int _curPos = 0;
+        public int CurPos
+        {
+            get
+            {
+                return _curPos;
+            }
+            set
+            {
+                if (value >= 0 || Functions.Count > value)
+                {
+                    _curPos = value;
+                }
+            }
+        }
+
+        public bool ShowOptions()
+        {
+            for (int i = 0; i < Functions.Count; i++)
+            {
+                if (i == CurPos)
+                {
+                    Console.BackgroundColor = ConsoleColor.Green;
+                    Console.ForegroundColor = ConsoleColor.Black;
+                }
+                Console.WriteLine(i + " . " + Functions.Keys.ToArray()[i]);
+                Console.ResetColor();
+            }
+            return true;
+        }
+
+        public bool AddSelection(string Name , Func<bool> func)
+        {
+            if (Name == null || func == null)
+            {
+                return false;
+            }
+            Functions.Add(Name, func);
+            return true;
+        }
+
+        public bool ShowInfo(int pos , string info)
+        {
+            Console.CursorLeft = 0;
+            Console.CursorTop = Functions.Count;
+            Console.Write(new string(" ".ToCharArray()[0], Console.BufferWidth));
+            Console.CursorLeft = 0;
+            Console.Write("[{0}]{1}" , pos , info);
+            return true;
+        }
+
+        public bool Run()
+        {
+            Console.Clear();
+            while (true)
+            {
+                ShowOptions();
+                var key = Console.ReadKey();
+                if (key.Key == ConsoleKey.DownArrow)
+                {
+                    CurPos += 1;
+                }
+                else if (key.Key == ConsoleKey.UpArrow)
+                {
+                    CurPos -= 1;
+                }
+                else if (key.Key == ConsoleKey.Enter)
+                {
+                    Functions.Values.ToArray()[CurPos].Invoke();
+                }
+                else if (key.Key == ConsoleKey.Escape) 
+                {
+                    break;
+                }
+                Console.CursorLeft = 0;
+                Console.CursorTop = 0;
+            }
+            return true;
+        }
+
     }
 }
