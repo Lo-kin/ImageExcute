@@ -3,19 +3,30 @@ using System.Drawing;
 using OpenCvSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp;
+using System.Text;
+using System;
+using System.IO;
 
 namespace ImageExcute
 {
     internal class Program
     {
+        public static Version version = new Version(0,3);
         static void Main(string[] args)
         {
             Program program = new Program();
             program.UI();
         }
 
-        public static bool Exit()
+        static int Hash = 0;
+        static string SavePath { get { return "output\\" + Hash; } }
+
+        public bool FileCheck()
         {
+            if (Directory.Exists(SavePath) == false)
+            {
+                Directory.CreateDirectory(SavePath);
+            }
             return true;
         }
 
@@ -24,32 +35,53 @@ namespace ImageExcute
             string FilePath = "";
             Mat mat = null;
             Mat[] Frames = [];
+            OpenCvSharp.Size Resize = new OpenCvSharp.Size(); 
 
             ProcessData pd0 = new ProcessData(0);
             ProcessBar processBar0 = new ProcessBar(() => { return MakeShakeFrames(mat, 12, out Frames, pd0); }, pd0);
-            ProcessBar processBar1 = new ProcessBar(() => { return TransToGif(mat.Cols, mat.Rows, Frames, 50, pd0); }, pd0);
-            ProcessBar processBar2 = new ProcessBar(() => { return TransToChar(new Mat(FilePath , ImreadModes.Grayscale).Threshold(0, 255, ThresholdTypes.Otsu), 1, pd0); }, pd0);
+            ProcessBar processBar1 = new ProcessBar(() => { return TransToGif(Frames, 50, pd0); }, pd0);
+            ProcessBar processBar2 = new ProcessBar(() => { return TransToChar(new Mat(FilePath , ImreadModes.Grayscale).Threshold(0, 255, ThresholdTypes.Otsu).Resize(Resize), 1, pd0); }, pd0);
             processBar0.Name = "Make Frames";
             processBar1.Name = "Trans Mats To Gif";
             processBar2.Name = "Trans Mat To Char Image";
             Selection selection = new Selection();
+            selection.AddSelection("Choose File Path", () => { selection.ShowInfo(0, "Image Path>"); FilePath = Console.ReadLine().Replace("\"", ""); mat = Cv2.ImRead(FilePath);Hash = FilePath.GetHashCode(); Resize = mat.Size(); FileCheck() ; return true; });
             selection.AddSelection("Shake Frames" , () => {return processBar0.Run();});
-            selection.AddSelection("Transform Image To Chars", () => { return processBar2.Run();});
-            selection.AddSelection("Get Shake Frames GIF", () => { return processBar1.Run(); });
+            selection.AddSelection("Transform Image To Chars", () => {return processBar2.Run();});
+            selection.AddSelection("Get Shake Frames GIF", () => {return processBar1.Run(); });
+            selection.AddSelection("Resize", () => {
+                Console.WriteLine(" ", Console.BufferWidth);
+                if (mat == null) { selection.ShowInfo(0, "No Mat Current"); return false; }
+                float width = 1;float height = 1;
+                try
+                {
+                    Console.Write("Input width>"); width = Convert.ToSingle(Console.ReadLine()); Console.Write("Input Height>"); height = Convert.ToSingle(Console.ReadLine());
+                }
+                catch
+                {
+                    Console.WriteLine("An Invaild Value Caugtched!");
+                }
+                finally
+                {
+                    var sizeinfo = new OpenCvSharp.Size();
+                    if (width <= 1) sizeinfo.Width = (int)(mat.Width * width); else sizeinfo.Width = (int)width;
+                    if (height <= 1) sizeinfo.Height = (int)(mat.Height * height); else sizeinfo.Height = (int)height;
+                    Console.WriteLine("Origin Scale {0} -> {1}", Resize, sizeinfo);
+                    Resize = sizeinfo;
+                    mat.Resize(Resize);
+                }
+                return true;
+            });
+            selection.AddSelection("Current Size", () => { Console.WriteLine(Resize.ToString()); return true; });
+            selection.AddSelection("Get Current Work File Path", () => {Console.WriteLine(SavePath); return true; });
             selection.AddSelection("Exit", () => { selection.ShowInfo(0, "Press ESC To Escape");return true; });
-            selection.AddSelection("Choose File Path", () => {selection.ShowInfo(0,"Image Path>") ; FilePath = Console.ReadLine().Replace("\"", "");mat = Cv2.ImRead(FilePath); return true; });
 
             selection.Run();
-
             return true;
         }
 
         public bool MakeShakeFrames(Mat mat, int Count , out Mat[] Frames, ProcessData? PD = null)
         {
-            if (PD != null)
-            {
-                PD.TotalTask = Count * mat.Cols * mat.Rows;
-            }
             Frames = new Mat[Count];
             if (mat == null)
             {
@@ -59,6 +91,12 @@ namespace ImageExcute
             {
                 return false;
             }
+            if (PD != null)
+            {
+                PD.TotalTask = Count * mat.Cols * mat.Rows;
+            }
+            
+
             Mat[] OutFrames = new Mat[Count];
             int[] frameoffset = new int[Count];
             for (int i = 0; i < Count; i++)
@@ -108,28 +146,38 @@ namespace ImageExcute
             return BrailleChar.GetChar(_dexOrigin);
         }
 
-        public bool TransToGif(int width , int height , Mat[] Frames , int Delay , ProcessData? PD = null)
+        public bool TransToGif(Mat[] Frames , int Delay , ProcessData? PD = null)
         {
+            if (Frames.Length == 0) return false;
+            foreach(var item in Frames)
+            {
+                if (item == null)
+                {
+                    return false;
+                }
+            }
             if (PD != null)
             {
                 PD.TotalTask = Frames.Length;
             }
-            using Image<Rgba32> gif = new(width, height);
-            gif.Metadata.GetGifMetadata().RepeatCount = 0;
-            gif.Frames.RootFrame.Metadata.GetGifMetadata().FrameDelay = 10;
-            foreach (var frame in Frames)
+            using (Image<Rgba32> gif = new(Frames[0].Cols, Frames[1].Rows))
             {
-                using Image image = Image.Load(frame.ToBytes());
-                image.Frames.RootFrame.Metadata.GetGifMetadata().FrameDelay = 10;
-
-                gif.Frames.AddFrame(image.Frames.RootFrame);
-                if (PD != null)
+                gif.Metadata.GetGifMetadata().RepeatCount = 0;
+                gif.Frames.RootFrame.Metadata.GetGifMetadata().FrameDelay = 10;
+                foreach (var frame in Frames)
                 {
-                    PD.Current++;
+                    using Image image = Image.Load(frame.ToBytes());
+                    image.Frames.RootFrame.Metadata.GetGifMetadata().FrameDelay = 10;
+                    gif.Frames.AddFrame(image.Frames.RootFrame);
+                    if (PD != null)
+                    {
+                        PD.Current++;
+                    }
                 }
+                gif.Frames.RemoveFrame(0);
+                gif.SaveAsGif(SavePath + "\\output.gif");
             }
-            gif.Frames.RemoveFrame(0);
-            gif.SaveAsGif("output.gif");
+
             if (PD != null)
             {
                 PD.TaskOver();
@@ -143,35 +191,37 @@ namespace ImageExcute
             {
                 PD.TotalTask = mat.Cols * mat.Rows;
             }
-            string ImageResult = "";
-            Mat newmat = new Mat(mat.Rows , mat.Cols , mat.Type());
-            for (int y = 0; y < mat.Rows; y += 4)
+            
+            File.WriteAllText(SavePath + "\\output.txt", string.Empty);
+            using (StreamWriter sw = new StreamWriter(SavePath + "\\output.txt", false))
             {
-                for (int x = 0; x <= mat.Cols; x += 2)
+                StringBuilder BufferResult = new StringBuilder();
+                Mat newmat = new Mat(mat.Rows, mat.Cols, mat.Type());
+                for (int y = 0; y < mat.Rows; y += 4)
                 {
-                    byte[,] bytes = new byte[2, 4];
-                    for (int _cely = y; _cely < Math.Min(y + 4 , mat.Rows); _cely++)
+                    for (int x = 0; x <= mat.Cols; x += 2)
                     {
-                        for (int _celx = x; _celx < Math.Min(x + 2 , mat.Cols); _celx++)
+                        byte[,] bytes = new byte[2, 4];
+                        for (int _cely = y; _cely < Math.Min(y + 4, mat.Rows); _cely++)
                         {
-                            Vec3b p = mat.Get<Vec3b>(_cely, _celx);
-                            byte greyvalue = (byte)((p.Item0 + p.Item2 + p.Item1) / 3);
-                            bytes[_celx - x, _cely - y] = greyvalue;
-                            if (PD != null)
+                            for (int _celx = x; _celx < Math.Min(x + 2, mat.Cols); _celx++)
                             {
-                                PD.Current++;
+                                Vec3b p = mat.Get<Vec3b>(_cely, _celx);
+                                bytes[_celx - x, _cely - y] = (byte)((p.Item0 + p.Item2 + p.Item1) / 3); ;
+                                if (PD != null)
+                                {
+                                    PD.Current++;
+                                }
                             }
                         }
+                        BufferResult.Append(Get2x4Char(bytes, 140));
                     }
-                    ImageResult += Get2x4Char(bytes, 140);
+                    BufferResult.Append('\n');
                 }
-                ImageResult += "\n";
+                sw.Write(BufferResult);
+                //sw.Flush();
+                BufferResult.Clear();
             }
-            File.WriteAllText("test.txt", string.Empty);
-            using StreamWriter sw = new StreamWriter("test.txt" , false);
-            sw.Write(ImageResult);
-            sw.Flush();
-            ImageResult = string.Empty;
             if (PD != null)
             {
                 PD.TaskOver();
@@ -203,11 +253,19 @@ namespace ImageExcute
             {
                 return false;
             }
+            PD.Over = false;
             CurTop = 10;
+            bool RunStat = true;
             Thread t = new Thread(() => 
-            {  
+            {
+                Console.Clear();
                 while (true)
                 {
+                    if (RunStat == false)
+                    {
+                        Console.Write("Task Faild");
+                        break;
+                    }
                     string tmp = Name + " [";
                     Console.CursorTop = CurTop;
                     double perc;
@@ -227,14 +285,17 @@ namespace ImageExcute
                     Console.WriteLine(tmp);
                     if (PD.Over == true)
                     {
+                        Console.WriteLine("Task Done!");
                         break;
                     }
                     Thread.Sleep(500);
                 }
-                Console.WriteLine("Task Done!");
+                
             });
+            t.Name = "ProcessBar Thread";
             t.Start();
-            Task.Invoke();
+            RunStat = Task.Invoke();
+            
             return true;
         }
     }
@@ -328,15 +389,20 @@ namespace ImageExcute
             }
             set
             {
-                if (value >= 0 || Functions.Count > value)
+                if (value >= 0 && Functions.Count > value)
                 {
                     _curPos = value;
+                }
+                else
+                {
+                    ShowInfo(1, "Out Of Bound!");
                 }
             }
         }
 
         public bool ShowOptions()
         {
+            Console.WriteLine("ImageExcute Created By Tredam v" + Program.version.ToString());
             for (int i = 0; i < Functions.Count; i++)
             {
                 if (i == CurPos)
@@ -363,7 +429,7 @@ namespace ImageExcute
         public bool ShowInfo(int pos , string info)
         {
             Console.CursorLeft = 0;
-            Console.CursorTop = Functions.Count;
+            Console.CursorTop = Functions.Count + 1;
             Console.Write(new string(" ".ToCharArray()[0], Console.BufferWidth));
             Console.CursorLeft = 0;
             Console.Write("[{0}]{1}" , pos , info);
