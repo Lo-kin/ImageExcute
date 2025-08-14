@@ -33,25 +33,31 @@ namespace ImageExcute
         public bool UI()
         {
             string FilePath = "";
-            Mat mat = null;
+            Mat originMat = null;
+            Mat ResizeMat = null;
             Mat[] Frames = [];
             OpenCvSharp.Size Resize = new OpenCvSharp.Size(); 
 
             ProcessData pd0 = new ProcessData(0);
-            ProcessBar processBar0 = new ProcessBar(() => { return MakeShakeFrames(mat, 12, out Frames, pd0); }, pd0);
+            ProcessBar processBar0 = new ProcessBar(() => { return MakeShakeFrames(ResizeMat, 12, out Frames, pd0); }, pd0);
             ProcessBar processBar1 = new ProcessBar(() => { return TransToGif(Frames, 50, pd0); }, pd0);
             ProcessBar processBar2 = new ProcessBar(() => { return TransToChar(new Mat(FilePath , ImreadModes.Grayscale).Threshold(0, 255, ThresholdTypes.Otsu).Resize(Resize), 1, pd0); }, pd0);
             processBar0.Name = "Make Frames";
             processBar1.Name = "Trans Mats To Gif";
             processBar2.Name = "Trans Mat To Char Image";
             Selection selection = new Selection();
-            selection.AddSelection("Choose File Path", () => { selection.ShowInfo(0, "Image Path>"); FilePath = Console.ReadLine().Replace("\"", ""); mat = Cv2.ImRead(FilePath);Hash = FilePath.GetHashCode(); Resize = mat.Size(); FileCheck() ; return true; });
+            selection.AddSelection("Choose File Path", () => { 
+                selection.ShowInfo(0, "Image Path>"); 
+                FilePath = Console.ReadLine().Replace("\"", ""); 
+                originMat = Cv2.ImRead(FilePath);
+                Hash = FilePath.GetHashCode();
+                Resize = originMat.Size();ResizeMat = originMat.Clone(); FileCheck() ; return true; });
             selection.AddSelection("Shake Frames" , () => {return processBar0.Run();});
             selection.AddSelection("Transform Image To Chars", () => {return processBar2.Run();});
             selection.AddSelection("Get Shake Frames GIF", () => {return processBar1.Run(); });
             selection.AddSelection("Resize", () => {
                 Console.WriteLine(" ", Console.BufferWidth);
-                if (mat == null) { selection.ShowInfo(0, "No Mat Current"); return false; }
+                if (originMat == null) { selection.ShowInfo(0, "No Mat Current"); return false; }
                 float width = 1;float height = 1;
                 try
                 {
@@ -64,11 +70,12 @@ namespace ImageExcute
                 finally
                 {
                     var sizeinfo = new OpenCvSharp.Size();
-                    if (width <= 1) sizeinfo.Width = (int)(mat.Width * width); else sizeinfo.Width = (int)width;
-                    if (height <= 1) sizeinfo.Height = (int)(mat.Height * height); else sizeinfo.Height = (int)height;
+                    if (width <= 1) sizeinfo.Width = (int)(originMat.Width * width); else sizeinfo.Width = (int)width;
+                    if (height <= 1) sizeinfo.Height = (int)(originMat.Height * height); else sizeinfo.Height = (int)height;
                     Console.WriteLine("Origin Scale {0} -> {1}", Resize, sizeinfo);
                     Resize = sizeinfo;
-                    mat.Resize(Resize);
+                    ResizeMat = originMat.Clone();
+                    ResizeMat.Resize(Resize);
                 }
                 return true;
             });
@@ -95,7 +102,6 @@ namespace ImageExcute
             {
                 PD.TotalTask = Count * mat.Cols * mat.Rows;
             }
-            
 
             Mat[] OutFrames = new Mat[Count];
             int[] frameoffset = new int[Count];
