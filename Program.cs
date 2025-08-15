@@ -1,11 +1,6 @@
-﻿using System;
-using System.Drawing;
-using OpenCvSharp;
-using SixLabors.ImageSharp.PixelFormats;
+﻿using OpenCvSharp;
 using SixLabors.ImageSharp;
 using System.Text;
-using System;
-using System.IO;
 
 namespace ImageExcute
 {
@@ -155,24 +150,18 @@ namespace ImageExcute
         public bool TransToGif(Mat[] Frames , int Delay , ProcessData? PD = null)
         {
             if (Frames.Length == 0) return false;
-            foreach(var item in Frames)
-            {
-                if (item == null)
-                {
-                    return false;
-                }
-            }
             if (PD != null)
             {
                 PD.TotalTask = Frames.Length;
             }
-            using (Image<Rgba32> gif = new(Frames[0].Cols, Frames[1].Rows))
+
+            using (Image gif = Image.Load(Frames[0].ToBytes()))
             {
                 gif.Metadata.GetGifMetadata().RepeatCount = 0;
                 gif.Frames.RootFrame.Metadata.GetGifMetadata().FrameDelay = 10;
-                foreach (var frame in Frames)
+                for (int i = 1;i < Frames.Length; i ++)
                 {
-                    using Image image = Image.Load(frame.ToBytes());
+                    using Image image = Image.Load(Frames[i].ToBytes());
                     image.Frames.RootFrame.Metadata.GetGifMetadata().FrameDelay = 10;
                     gif.Frames.AddFrame(image.Frames.RootFrame);
                     if (PD != null)
@@ -180,10 +169,8 @@ namespace ImageExcute
                         PD.Current++;
                     }
                 }
-                gif.Frames.RemoveFrame(0);
                 gif.SaveAsGif(SavePath + "\\output.gif");
             }
-
             if (PD != null)
             {
                 PD.TaskOver();
@@ -460,11 +447,18 @@ namespace ImageExcute
                 else if (key.Key == ConsoleKey.Enter)
                 {
                     Functions.Values.ToArray()[CurPos].Invoke();
+                    Console.ReadKey();
                 }
                 else if (key.Key == ConsoleKey.Escape) 
                 {
                     break;
                 }
+                else
+                {
+                    Console.ReadKey();
+                }
+                
+                Console.Clear();
                 Console.CursorLeft = 0;
                 Console.CursorTop = 0;
             }
